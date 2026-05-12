@@ -10,5 +10,7 @@ dependencies.lock
 .env
 releases/
 main/assets/lang_config.h
-.DS_Storebuild-racing/
+main/iot/things/home_assistant_config.local.h
+.DS_Store
+build-racing/
 sdkconfig.racing

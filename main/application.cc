@@ -19,6 +19,7 @@
 
 #define TAG "Application"
 
+static const char* kWakeWordDisplayName = "多多";
 
 static const char* const STATE_STRINGS[] = {
     "unknown",
@@ -519,12 +520,15 @@ void Application::Start() {
                     protocol_->SendAudio(opus);
                 }
                 // Set the chat state to wake word detected
-                protocol_->SendWakeWordDetected(wake_word);
-                ESP_LOGI(TAG, "Wake word detected: %s", wake_word.c_str());
+                protocol_->SendWakeWordDetected(kWakeWordDisplayName);
+                ESP_LOGI(TAG, "Wake word detected: %s -> %s", wake_word.c_str(), kWakeWordDisplayName);
                 keep_listening_ = true;
                 SetDeviceState(kDeviceStateIdle);
             } else if (device_state_ == kDeviceStateSpeaking) {
                 AbortSpeaking(kAbortReasonWakeWordDetected);
+                keep_listening_ = true;
+                protocol_->SendStartListening(kListeningModeAutoStop);
+                SetDeviceState(kDeviceStateListening);
             } else if (device_state_ == kDeviceStateActivating) {
                 SetDeviceState(kDeviceStateIdle);
             }
@@ -803,11 +807,13 @@ void Application::Reboot() {
 }
 
 void Application::WakeWordInvoke(const std::string& wake_word) {
+    (void)wake_word;
+    std::string normalized_wake_word = kWakeWordDisplayName;
     if (device_state_ == kDeviceStateIdle) {
         ToggleChatState();
-        Schedule([this, wake_word]() {
+        Schedule([this, normalized_wake_word]() {
             if (protocol_) {
-                protocol_->SendWakeWordDetected(wake_word); 
+                protocol_->SendWakeWordDetected(normalized_wake_word);
             }
         }); 
     } else if (device_state_ == kDeviceStateSpeaking) {

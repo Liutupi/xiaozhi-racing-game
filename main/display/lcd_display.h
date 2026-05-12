@@ -30,9 +30,7 @@ protected:
     lv_obj_t* robot_left_brow_ = nullptr;
     lv_obj_t* robot_right_brow_ = nullptr;
     lv_obj_t* robot_mouth_ = nullptr;
-    lv_obj_t* robot_energy_bar_ = nullptr;
     lv_obj_t* robot_badge_label_ = nullptr;
-    lv_obj_t* robot_target_label_ = nullptr;
     int robot_phase_ = 0;
     const char* robot_emotion_ = "neutral";
 

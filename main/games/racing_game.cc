@@ -220,6 +220,7 @@ void RacingGame::Start(Display* display) {
     {
         DisplayLockGuard lock(display_);
         CreateUi();
+        LoadHighScore();
         ResetGame();
     }
 
@@ -266,8 +267,23 @@ bool RacingGame::HandleClick() {
         return true;
     }
 
+    int old = player_lane_;
     player_lane_ = (player_lane_ + 2) % 3;
     SetCarPosition(player_car_, player_lane_, height_ - kPlayerYMargin);
+    if (player_lane_ != old) {
+        for (auto& car : traffic_) {
+            if (!car.active || car.lane != old) continue;
+            int dist = abs(car.y - (height_ - kPlayerYMargin));
+            if (dist < 36) {
+                score_ += 3;
+                close_timer_ = 14;
+                lv_label_set_text(close_label_, "CLOSE! +3");
+                lv_obj_clear_flag(close_label_, LV_OBJ_FLAG_HIDDEN);
+                RacingSfx::GetInstance().Play(RacingSfxEvent::kClose);
+                break;
+            }
+        }
+    }
     RacingSfx::GetInstance().Play(RacingSfxEvent::kMove);
     return true;
 }
@@ -287,8 +303,23 @@ bool RacingGame::MoveRight() {
         return true;
     }
 
+    int old = player_lane_;
     player_lane_ = (player_lane_ + 1) % 3;
     SetCarPosition(player_car_, player_lane_, height_ - kPlayerYMargin);
+    if (player_lane_ != old) {
+        for (auto& car : traffic_) {
+            if (!car.active || car.lane != old) continue;
+            int dist = abs(car.y - (height_ - kPlayerYMargin));
+            if (dist < 36) {
+                score_ += 3;
+                close_timer_ = 14;
+                lv_label_set_text(close_label_, "CLOSE! +3");
+                lv_obj_clear_flag(close_label_, LV_OBJ_FLAG_HIDDEN);
+                RacingSfx::GetInstance().Play(RacingSfxEvent::kClose);
+                break;
+            }
+        }
+    }
     RacingSfx::GetInstance().Play(RacingSfxEvent::kMove);
     return true;
 }
@@ -300,8 +331,23 @@ bool RacingGame::MoveLeft() {
 
     DisplayLockGuard lock(display_);
     if (!game_over_) {
+        int old = player_lane_;
         player_lane_ = (player_lane_ + 2) % 3;
         SetCarPosition(player_car_, player_lane_, height_ - kPlayerYMargin);
+        if (player_lane_ != old) {
+            for (auto& car : traffic_) {
+                if (!car.active || car.lane != old) continue;
+                int dist = abs(car.y - (height_ - kPlayerYMargin));
+                if (dist < 36) {
+                    score_ += 3;
+                    close_timer_ = 14;
+                    lv_label_set_text(close_label_, "CLOSE! +3");
+                    lv_obj_clear_flag(close_label_, LV_OBJ_FLAG_HIDDEN);
+                    RacingSfx::GetInstance().Play(RacingSfxEvent::kClose);
+                    break;
+                }
+            }
+        }
         RacingSfx::GetInstance().Play(RacingSfxEvent::kMove);
     }
     return true;
@@ -362,6 +408,18 @@ void RacingGame::CreateUi() {
     lv_obj_set_style_text_color(score_label_, lv_color_hex(0xc4f1ff), 0);
     lv_label_set_text(score_label_, "SCORE 0");
 
+    high_score_label_ = lv_label_create(layer_);
+    lv_obj_set_pos(high_score_label_, width_ - 64, 1);
+    lv_obj_set_style_text_color(high_score_label_, lv_color_hex(0xc084fc), 0);
+    lv_label_set_text_fmt(high_score_label_, "HI %ld", (long)high_score_);
+
+    close_label_ = lv_label_create(layer_);
+    lv_obj_set_width(close_label_, width_ - 8);
+    lv_obj_set_pos(close_label_, 4, height_ / 2 - 30);
+    lv_obj_set_style_text_align(close_label_, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_color(close_label_, lv_color_hex(0xfbbf24), 0);
+    lv_obj_add_flag(close_label_, LV_OBJ_FLAG_HIDDEN);
+
     speed_label_ = lv_label_create(layer_);
     lv_obj_set_pos(speed_label_, 4, road_y_ - 11);
     lv_obj_set_style_text_color(speed_label_, lv_color_hex(0x4ade80), 0);
@@ -406,6 +464,15 @@ void RacingGame::CreateUi() {
         p.life = 0;
     }
 
+    for (auto& c : coins_) {
+        c.obj = lv_obj_create(layer_);
+        lv_obj_set_size(c.obj, 6, 6);
+        StylePlain(c.obj, lv_color_hex(0xfbbf24));
+        lv_obj_set_style_radius(c.obj, 3, 0);
+        lv_obj_add_flag(c.obj, LV_OBJ_FLAG_HIDDEN);
+        c.active = false;
+    }
+
     player_car_ = CreateCar(layer_, CarType::kPlayer);
 
     const CarType kInitTypes[] = {
@@ -431,6 +498,8 @@ void RacingGame::DestroyUi() {
     speed_label_ = nullptr;
     speed_bar_bg_ = nullptr;
     speed_bar_fill_ = nullptr;
+    high_score_label_ = nullptr;
+    close_label_ = nullptr;
     crash_overlay_ = nullptr;
     streak_left_ = nullptr;
     streak_right_ = nullptr;
@@ -461,6 +530,18 @@ void RacingGame::ResetGame(bool play_sfx) {
         p.life = 0;
         lv_obj_add_flag(p.obj, LV_OBJ_FLAG_HIDDEN);
     }
+    for (auto& c : coins_) {
+        c.active = false;
+        lv_obj_add_flag(c.obj, LV_OBJ_FLAG_HIDDEN);
+    }
+    coin_spawn_timer_ = 30;
+    close_timer_ = 0;
+    road_narrow_timer_ = 0;
+    road_narrowed_ = false;
+    closed_lane_ = -1;
+    lv_obj_add_flag(close_label_, LV_OBJ_FLAG_HIDDEN);
+    StylePlain(road_edges_[0], lv_color_hex(0x22d3ee));
+    StylePlain(road_edges_[1], lv_color_hex(0xe879f9));
     SetCarPosition(player_car_, player_lane_, height_ - kPlayerYMargin);
     for (auto& car : traffic_) {
         car.active = false;
@@ -518,6 +599,28 @@ void RacingGame::Tick() {
         lv_obj_add_flag(streak_right_, LV_OBJ_FLAG_HIDDEN);
     }
 
+    if (close_timer_ > 0) {
+        if (--close_timer_ <= 0) {
+            lv_obj_add_flag(close_label_, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+
+    if (road_narrow_timer_ > 0) {
+        road_narrow_timer_--;
+        if (road_narrow_timer_ == 0) {
+            road_narrowed_ = false;
+            closed_lane_ = -1;
+            StylePlain(road_edges_[0], lv_color_hex(0x22d3ee));
+            StylePlain(road_edges_[1], lv_color_hex(0xe879f9));
+        } else if (road_narrow_timer_ % 16 < 8) {
+            StylePlain(road_edges_[0], lv_color_hex(0xef4444));
+            StylePlain(road_edges_[1], lv_color_hex(0xef4444));
+        } else {
+            StylePlain(road_edges_[0], lv_color_hex(0x22d3ee));
+            StylePlain(road_edges_[1], lv_color_hex(0xe879f9));
+        }
+    }
+
     if (game_over_) {
         return;
     }
@@ -557,6 +660,10 @@ void RacingGame::Tick() {
                 lv_obj_clear_flag(p.obj, LV_OBJ_FLAG_HIDDEN);
             }
             RacingSfx::GetInstance().Play(RacingSfxEvent::kCrash);
+            if (score_ > high_score_) {
+                high_score_ = score_;
+                SaveHighScore();
+            }
             lv_label_set_text_fmt(message_label_, "CRASH!\nSCORE %d\nclick restart", score_);
             lv_obj_clear_flag(message_label_, LV_OBJ_FLAG_HIDDEN);
             return;
@@ -568,9 +675,47 @@ void RacingGame::Tick() {
             if (score_ % 8 == 0 && speed_ < 7) {
                 speed_++;
             }
+            if (!road_narrowed_ && score_ > 0 && score_ % 15 == 0) {
+                road_narrowed_ = true;
+                road_narrow_timer_ = 200;
+                closed_lane_ = esp_random() % 3;
+            }
             lv_obj_add_flag(car.body, LV_OBJ_FLAG_HIDDEN);
         } else {
             SetCarPosition(car.body, car.lane, car.y);
+        }
+    }
+
+    if (--coin_spawn_timer_ <= 0) {
+        for (auto& c : coins_) {
+            if (!c.active) {
+                c.active = true;
+                c.lane = esp_random() % 3;
+                c.y = road_y_ - 8;
+                lv_obj_clear_flag(c.obj, LV_OBJ_FLAG_HIDDEN);
+                break;
+            }
+        }
+        coin_spawn_timer_ = 25 + (esp_random() % 35);
+    }
+
+    for (auto& c : coins_) {
+        if (!c.active) continue;
+        c.y += speed_;
+        int px = LaneCenterX(c.lane) - 3;
+        lv_obj_set_pos(c.obj, px, c.y);
+        if (c.lane == player_lane_) {
+            int py = height_ - kPlayerYMargin;
+            if (c.y + 6 > py && c.y < py + kCarH) {
+                c.active = false;
+                lv_obj_add_flag(c.obj, LV_OBJ_FLAG_HIDDEN);
+                score_ += 5;
+                RacingSfx::GetInstance().Play(RacingSfxEvent::kCoin);
+            }
+        }
+        if (c.active && c.y > height_ + 10) {
+            c.active = false;
+            lv_obj_add_flag(c.obj, LV_OBJ_FLAG_HIDDEN);
         }
     }
 
@@ -585,7 +730,12 @@ void RacingGame::SpawnTraffic() {
         return;
     }
 
-    it->lane = esp_random() % 3;
+    int lane = esp_random() % 3;
+    if (road_narrowed_ && lane == closed_lane_) {
+        lane = (lane + 1) % 3;
+        if (lane == closed_lane_) lane = 0;
+    }
+    it->lane = lane;
     it->y = -kCarH;
     it->type = static_cast<CarType>(1 + (esp_random() % 4));
     it->active = true;
@@ -596,23 +746,7 @@ void RacingGame::SpawnTraffic() {
 
 void RacingGame::UpdateUi() {
     lv_label_set_text_fmt(score_label_, "SCORE %d", score_);
-
-    if (speed_label_ != nullptr && speed_bar_fill_ != nullptr) {
-        lv_color_t spd_color;
-        switch (speed_) {
-        case 1: case 2: spd_color = lv_color_hex(0x4ade80); break;
-        case 3: case 4: spd_color = lv_color_hex(0xfacc15); break;
-        case 5: case 6: spd_color = lv_color_hex(0xf97316); break;
-        default:        spd_color = lv_color_hex(0xef4444); break;
-        }
-        lv_obj_set_style_text_color(speed_label_, spd_color, 0);
-        lv_label_set_text_fmt(speed_label_, "SPD %d", speed_);
-        StylePlain(speed_bar_fill_, spd_color);
-        lv_obj_set_style_radius(speed_bar_fill_, 1, 0);
-        int bar_w = speed_ * 8;
-        if (bar_w > 56) bar_w = 56;
-        lv_obj_set_size(speed_bar_fill_, bar_w, 3);
-    }
+    lv_label_set_text_fmt(high_score_label_, "HI %ld", (long)high_score_);
 
     for (size_t i = 0; i < lane_marks_.size(); ++i) {
         int divider = static_cast<int>(i % 2) + 1;
@@ -643,4 +777,21 @@ bool RacingGame::CheckCollision(const Car& car) const {
         return false;
     }
     return car.y + kCarH > player_y + 4 && car.y < player_y + kCarH - 4;
+}
+
+void RacingGame::LoadHighScore() {
+    nvs_handle_t handle;
+    if (nvs_open("racing", NVS_READONLY, &handle) == ESP_OK) {
+        nvs_get_i32(handle, "hi", &high_score_);
+        nvs_close(handle);
+    }
+}
+
+void RacingGame::SaveHighScore() {
+    nvs_handle_t handle;
+    if (nvs_open("racing", NVS_READWRITE, &handle) == ESP_OK) {
+        nvs_set_i32(handle, "hi", high_score_);
+        nvs_commit(handle);
+        nvs_close(handle);
+    }
 }

@@ -7,6 +7,8 @@ enum class RacingSfxEvent {
     kScore,
     kCrash,
     kRestart,
+    kCoin,
+    kClose,
 };
 
 class RacingSfx {

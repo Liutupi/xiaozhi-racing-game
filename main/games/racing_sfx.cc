@@ -67,6 +67,16 @@ std::vector<int16_t> BuildSound(RacingSfxEvent event, int sample_rate) {
         AppendTone(pcm, sample_rate, 520, 55);
         AppendTone(pcm, sample_rate, 780, 85);
         break;
+    case RacingSfxEvent::kCoin:
+        AppendTone(pcm, sample_rate, 1200, 28, 5600);
+        AppendSilence(pcm, sample_rate, 6);
+        AppendTone(pcm, sample_rate, 1600, 36, 5400);
+        break;
+    case RacingSfxEvent::kClose:
+        AppendTone(pcm, sample_rate, 900, 30, 6200);
+        AppendSilence(pcm, sample_rate, 8);
+        AppendTone(pcm, sample_rate, 1400, 40, 6000);
+        break;
     }
 
     AppendSilence(pcm, sample_rate, 20);
