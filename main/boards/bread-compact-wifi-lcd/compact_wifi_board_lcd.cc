@@ -7,6 +7,8 @@
 #include "config.h"
 #include "games/breakout_game.h"
 #include "games/math_game.h"
+#include "games/number_2048_game.h"
+#include "games/number_memory_game.h"
 #include "games/racing_game.h"
 #include "iot/thing_manager.h"
 #include "led/single_led.h"
@@ -76,17 +78,21 @@ private:
     MathGame math_game_;
     RacingGame racing_game_;
     BreakoutGame breakout_game_;
+    Number2048Game number_2048_game_;
+    NumberMemoryGame number_memory_game_;
     enum class LauncherMode : uint8_t {
         kMenu,
         kXiaozhi,
         kMath,
         kRacing,
         kBreakout,
+        kNumber2048,
+        kNumberMemory,
     };
     LauncherMode launcher_mode_ = LauncherMode::kMenu;
     int launcher_index_ = 0;
     lv_obj_t* launcher_layer_ = nullptr;
-    static constexpr int kLauncherItemCount = 4;
+    static constexpr int kLauncherItemCount = 6;
     lv_obj_t* launcher_items_[kLauncherItemCount] = {};
     lv_obj_t* launcher_labels_[kLauncherItemCount] = {};
 
@@ -114,8 +120,8 @@ private:
     }
 
     void DrawLauncher() {
-        static const char* kItems[] = {"1  XIAOZHI", "2  MATH", "3  RACING", "4  打砖块"};
-        static const uint32_t kItemColors[] = {0x1d4ed8, 0x047857, 0xbe123c, 0x7c3aed};
+        static const char* kItems[] = {"1  XIAOZHI", "2  MATH", "3  RACING", "4  打砖块", "5  2048", "6  数字配对"};
+        static const uint32_t kItemColors[] = {0x1d4ed8, 0x047857, 0xbe123c, 0x7c3aed, 0xb45309, 0x0f766e};
         for (int i = 0; i < kLauncherItemCount; ++i) {
             const bool active = i == launcher_index_;
             StyleLauncherBox(launcher_items_[i], active ? 0xfff1c2 : kItemColors[i],
@@ -139,6 +145,12 @@ private:
         if (breakout_game_.IsRunning()) {
             breakout_game_.Stop();
         }
+        if (number_2048_game_.IsRunning()) {
+            number_2048_game_.Stop();
+        }
+        if (number_memory_game_.IsRunning()) {
+            number_memory_game_.Stop();
+        }
 
         DisplayLockGuard lock(display_);
         launcher_mode_ = LauncherMode::kMenu;
@@ -153,10 +165,10 @@ private:
 
             for (int i = 0; i < kLauncherItemCount; ++i) {
                 launcher_items_[i] = lv_obj_create(launcher_layer_);
-                lv_obj_set_size(launcher_items_[i], display_->width() - 18, 23);
-                lv_obj_set_pos(launcher_items_[i], 9, 38 + i * 26);
+                lv_obj_set_size(launcher_items_[i], display_->width() - 18, 17);
+                lv_obj_set_pos(launcher_items_[i], 9, 31 + i * 19);
                 StyleLauncherBox(launcher_items_[i], 0x16345f, 0x334155, 1, 5);
-                launcher_labels_[i] = AddLauncherLabel(launcher_items_[i], 8, 4, display_->width() - 34, "", 0xf8fafc);
+                launcher_labels_[i] = AddLauncherLabel(launcher_items_[i], 8, 0, display_->width() - 34, "", 0xf8fafc);
             }
 
             AddLauncherLabel(launcher_layer_, 7, display_->height() - 18, display_->width() - 14,
@@ -208,9 +220,15 @@ private:
         } else if (launcher_index_ == 2) {
             launcher_mode_ = LauncherMode::kRacing;
             racing_game_.Start(display_);
-        } else {
+        } else if (launcher_index_ == 3) {
             launcher_mode_ = LauncherMode::kBreakout;
             breakout_game_.Start(display_);
+        } else if (launcher_index_ == 4) {
+            launcher_mode_ = LauncherMode::kNumber2048;
+            number_2048_game_.Start(display_);
+        } else {
+            launcher_mode_ = LauncherMode::kNumberMemory;
+            number_memory_game_.Start(display_);
         }
     }
 
@@ -294,6 +312,12 @@ private:
             if (breakout_game_.HandleClick()) {
                 return;
             }
+            if (number_2048_game_.HandleClick()) {
+                return;
+            }
+            if (number_memory_game_.HandleClick()) {
+                return;
+            }
             auto& app = Application::GetInstance();
             if (app.GetDeviceState() == kDeviceStateStarting && !WifiStation::GetInstance().IsConnected()) {
                 ResetWifiConfiguration();
@@ -312,7 +336,13 @@ private:
             if (racing_game_.HandleDoubleClick()) {
                 return;
             }
-            breakout_game_.HandleDoubleClick();
+            if (breakout_game_.HandleDoubleClick()) {
+                return;
+            }
+            if (number_2048_game_.HandleDoubleClick()) {
+                return;
+            }
+            number_memory_game_.HandleDoubleClick();
         });
 
         boot_button_.OnLongPress([this]() {
@@ -334,7 +364,13 @@ private:
             if (racing_game_.MoveRight()) {
                 return;
             }
-            breakout_game_.MoveRight();
+            if (breakout_game_.MoveRight()) {
+                return;
+            }
+            if (number_2048_game_.MoveRight()) {
+                return;
+            }
+            number_memory_game_.MoveRight();
         });
     }
 
