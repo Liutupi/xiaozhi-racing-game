@@ -15,6 +15,13 @@
 LV_FONT_DECLARE(font_awesome_30_4);
 
 namespace {
+void FillPanel(esp_lcd_panel_handle_t panel, int width, int height, uint16_t color) {
+    std::vector<uint16_t> buffer(width, color);
+    for (int y = 0; y < height; y++) {
+        esp_lcd_panel_draw_bitmap(panel, 0, y, width, y + 1, buffer.data());
+    }
+}
+
 void StyleBox(lv_obj_t* obj, lv_color_t bg, lv_color_t border, int border_width, int radius) {
     lv_obj_set_scrollbar_mode(obj, LV_SCROLLBAR_MODE_OFF);
     lv_obj_set_style_bg_color(obj, bg, 0);
@@ -48,15 +55,10 @@ SpiLcdDisplay::SpiLcdDisplay(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_h
     width_ = width;
     height_ = height;
 
-    // draw white
-    std::vector<uint16_t> buffer(width_, 0xFFFF);
-    for (int y = 0; y < height_; y++) {
-        esp_lcd_panel_draw_bitmap(panel_, 0, y, width_, y + 1, buffer.data());
-    }
-
     // Set the display to on
     ESP_LOGI(TAG, "Turning display on");
     ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_, true));
+    FillPanel(panel_, width_, height_, 0x0000);
 
     ESP_LOGI(TAG, "Initialize LVGL library");
     lv_init();
@@ -96,6 +98,7 @@ SpiLcdDisplay::SpiLcdDisplay(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_h
     display_ = lvgl_port_add_disp(&display_cfg);
     if (display_ == nullptr) {
         ESP_LOGE(TAG, "Failed to add display");
+        FillPanel(panel_, width_, height_, 0xF81F);
         return;
     }
 

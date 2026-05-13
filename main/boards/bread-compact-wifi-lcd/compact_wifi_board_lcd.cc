@@ -5,6 +5,7 @@
 #include "application.h"
 #include "button.h"
 #include "config.h"
+#include "games/math_game.h"
 #include "games/racing_game.h"
 #include "iot/thing_manager.h"
 #include "led/single_led.h"
@@ -16,6 +17,8 @@
 #include <esp_lcd_panel_io.h>
 #include <esp_lcd_panel_ops.h>
 #include <driver/spi_common.h>
+
+#include <cstdint>
 
 #if defined(LCD_TYPE_ILI9341_SERIAL)
 #include "esp_lcd_ili9341.h"
@@ -69,7 +72,137 @@ private:
     Button boot_button_;
     Button volume_down_button_;
     LcdDisplay* display_;
+    MathGame math_game_;
     RacingGame racing_game_;
+    enum class LauncherMode : uint8_t {
+        kMenu,
+        kXiaozhi,
+        kMath,
+        kRacing,
+    };
+    LauncherMode launcher_mode_ = LauncherMode::kMenu;
+    int launcher_index_ = 0;
+    lv_obj_t* launcher_layer_ = nullptr;
+    lv_obj_t* launcher_items_[3] = {};
+    lv_obj_t* launcher_labels_[3] = {};
+
+    void StyleLauncherBox(lv_obj_t* obj, uint32_t bg, uint32_t border, int border_width, int radius) {
+        lv_obj_set_scrollbar_mode(obj, LV_SCROLLBAR_MODE_OFF);
+        lv_obj_set_style_bg_color(obj, lv_color_hex(bg), 0);
+        lv_obj_set_style_bg_opa(obj, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_color(obj, lv_color_hex(border), 0);
+        lv_obj_set_style_border_width(obj, border_width, 0);
+        lv_obj_set_style_radius(obj, radius, 0);
+        lv_obj_set_style_pad_all(obj, 0, 0);
+    }
+
+    lv_obj_t* AddLauncherLabel(lv_obj_t* parent, int x, int y, int w, const char* text, uint32_t color,
+                               lv_text_align_t align = LV_TEXT_ALIGN_LEFT) {
+        lv_obj_t* label = lv_label_create(parent);
+        lv_obj_set_pos(label, x, y);
+        lv_obj_set_width(label, w);
+        lv_obj_set_style_text_font(label, &lv_font_montserrat_14, 0);
+        lv_obj_set_style_text_color(label, lv_color_hex(color), 0);
+        lv_obj_set_style_text_align(label, align, 0);
+        lv_label_set_long_mode(label, LV_LABEL_LONG_DOT);
+        lv_label_set_text(label, text);
+        return label;
+    }
+
+    void DrawLauncher() {
+        static const char* kItems[] = {"1  XIAOZHI", "2  MATH", "3  RACING"};
+        static const uint32_t kItemColors[] = {0x1d4ed8, 0x047857, 0xbe123c};
+        for (int i = 0; i < 3; ++i) {
+            const bool active = i == launcher_index_;
+            StyleLauncherBox(launcher_items_[i], active ? 0xfff1c2 : kItemColors[i],
+                             active ? 0xffd166 : 0x334155, active ? 2 : 1, 5);
+            lv_obj_set_style_text_color(launcher_labels_[i], lv_color_hex(active ? 0x111827 : 0xf8fafc), 0);
+            lv_label_set_text(launcher_labels_[i], kItems[i]);
+        }
+    }
+
+    void ShowLauncher() {
+        if (display_ == nullptr) {
+            return;
+        }
+
+        if (math_game_.IsRunning()) {
+            math_game_.Stop();
+        }
+        if (racing_game_.IsRunning()) {
+            racing_game_.Stop();
+        }
+
+        DisplayLockGuard lock(display_);
+        launcher_mode_ = LauncherMode::kMenu;
+        if (launcher_layer_ == nullptr) {
+            launcher_layer_ = lv_obj_create(lv_screen_active());
+            lv_obj_set_size(launcher_layer_, display_->width(), display_->height());
+            lv_obj_set_pos(launcher_layer_, 0, 0);
+            StyleLauncherBox(launcher_layer_, 0x07111f, 0x07111f, 0, 0);
+
+            AddLauncherLabel(launcher_layer_, 7, 8, display_->width() - 14, "SELECT MODE", 0xffd166, LV_TEXT_ALIGN_CENTER);
+            AddLauncherLabel(launcher_layer_, 7, 26, display_->width() - 14, "GPIO39 move", 0x94a3b8, LV_TEXT_ALIGN_CENTER);
+
+            for (int i = 0; i < 3; ++i) {
+                launcher_items_[i] = lv_obj_create(launcher_layer_);
+                lv_obj_set_size(launcher_items_[i], display_->width() - 18, 28);
+                lv_obj_set_pos(launcher_items_[i], 9, 48 + i * 33);
+                StyleLauncherBox(launcher_items_[i], 0x16345f, 0x334155, 1, 5);
+                launcher_labels_[i] = AddLauncherLabel(launcher_items_[i], 8, 7, display_->width() - 34, "", 0xf8fafc);
+            }
+
+            AddLauncherLabel(launcher_layer_, 7, display_->height() - 18, display_->width() - 14,
+                             "BOOT enter", 0xffd166, LV_TEXT_ALIGN_CENTER);
+        }
+
+        lv_obj_clear_flag(launcher_layer_, LV_OBJ_FLAG_HIDDEN);
+        DrawLauncher();
+        lv_obj_move_foreground(launcher_layer_);
+    }
+
+    void HideLauncher() {
+        if (launcher_layer_ != nullptr) {
+            lv_obj_add_flag(launcher_layer_, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+
+    void MoveLauncherSelection(int delta) {
+        if (launcher_mode_ != LauncherMode::kMenu) {
+            return;
+        }
+        DisplayLockGuard lock(display_);
+        launcher_index_ = (launcher_index_ + delta + 3) % 3;
+        DrawLauncher();
+    }
+
+    void EnterLauncherSelection() {
+        if (launcher_mode_ != LauncherMode::kMenu || display_ == nullptr) {
+            return;
+        }
+
+        auto& app = Application::GetInstance();
+        if (app.GetDeviceState() == kDeviceStateUpgrading || app.GetDeviceState() == kDeviceStateFatalError) {
+            display_->ShowNotification("Mode unavailable now");
+            return;
+        }
+
+        {
+            DisplayLockGuard lock(display_);
+            HideLauncher();
+        }
+
+        if (launcher_index_ == 0) {
+            launcher_mode_ = LauncherMode::kXiaozhi;
+            app.DismissAlert();
+        } else if (launcher_index_ == 1) {
+            launcher_mode_ = LauncherMode::kMath;
+            math_game_.Start(display_);
+        } else {
+            launcher_mode_ = LauncherMode::kRacing;
+            racing_game_.Start(display_);
+        }
+    }
 
     void InitializeSpi() {
         spi_bus_config_t buscfg = {};
@@ -138,6 +271,13 @@ private:
  
     void InitializeButtons() {
         boot_button_.OnClick([this]() {
+            if (launcher_mode_ == LauncherMode::kMenu) {
+                EnterLauncherSelection();
+                return;
+            }
+            if (math_game_.HandleClick()) {
+                return;
+            }
             if (racing_game_.HandleClick()) {
                 return;
             }
@@ -149,25 +289,32 @@ private:
         });
 
         boot_button_.OnDoubleClick([this]() {
+            if (launcher_mode_ == LauncherMode::kMenu) {
+                MoveLauncherSelection(-1);
+                return;
+            }
+            if (math_game_.HandleDoubleClick()) {
+                return;
+            }
             racing_game_.HandleDoubleClick();
         });
 
         boot_button_.OnLongPress([this]() {
-            auto& app = Application::GetInstance();
-            if (racing_game_.IsRunning()) {
-                racing_game_.Stop();
-                app.DismissAlert();
+            if (launcher_mode_ != LauncherMode::kMenu) {
+                ShowLauncher();
                 return;
             }
-
-            if (app.GetDeviceState() == kDeviceStateUpgrading || app.GetDeviceState() == kDeviceStateFatalError) {
-                display_->ShowNotification("Racing unavailable now");
-                return;
-            }
-            racing_game_.Start(display_);
+            MoveLauncherSelection(1);
         });
 
         volume_down_button_.OnClick([this]() {
+            if (launcher_mode_ == LauncherMode::kMenu) {
+                MoveLauncherSelection(1);
+                return;
+            }
+            if (math_game_.MoveRight()) {
+                return;
+            }
             racing_game_.MoveRight();
         });
     }
@@ -188,13 +335,16 @@ public:
         boot_button_(BOOT_BUTTON_GPIO),
         volume_down_button_(VOLUME_DOWN_BUTTON_GPIO) {
         InitializeSpi();
+        if (DISPLAY_BACKLIGHT_PIN != GPIO_NUM_NC) {
+            GetBacklight()->SetBrightness(100);
+        }
         InitializeLcdDisplay();
         InitializeButtons();
         InitializeIot();
         if (DISPLAY_BACKLIGHT_PIN != GPIO_NUM_NC) {
             GetBacklight()->RestoreBrightness();
         }
-        
+        ShowLauncher();
     }
 
     virtual Led* GetLed() override {
