@@ -5,6 +5,7 @@
 #include "application.h"
 #include "button.h"
 #include "config.h"
+#include "games/breakout_game.h"
 #include "games/math_game.h"
 #include "games/racing_game.h"
 #include "iot/thing_manager.h"
@@ -74,17 +75,20 @@ private:
     LcdDisplay* display_;
     MathGame math_game_;
     RacingGame racing_game_;
+    BreakoutGame breakout_game_;
     enum class LauncherMode : uint8_t {
         kMenu,
         kXiaozhi,
         kMath,
         kRacing,
+        kBreakout,
     };
     LauncherMode launcher_mode_ = LauncherMode::kMenu;
     int launcher_index_ = 0;
     lv_obj_t* launcher_layer_ = nullptr;
-    lv_obj_t* launcher_items_[3] = {};
-    lv_obj_t* launcher_labels_[3] = {};
+    static constexpr int kLauncherItemCount = 4;
+    lv_obj_t* launcher_items_[kLauncherItemCount] = {};
+    lv_obj_t* launcher_labels_[kLauncherItemCount] = {};
 
     void StyleLauncherBox(lv_obj_t* obj, uint32_t bg, uint32_t border, int border_width, int radius) {
         lv_obj_set_scrollbar_mode(obj, LV_SCROLLBAR_MODE_OFF);
@@ -101,7 +105,7 @@ private:
         lv_obj_t* label = lv_label_create(parent);
         lv_obj_set_pos(label, x, y);
         lv_obj_set_width(label, w);
-        lv_obj_set_style_text_font(label, &lv_font_montserrat_14, 0);
+        lv_obj_set_style_text_font(label, &font_puhui_16_4, 0);
         lv_obj_set_style_text_color(label, lv_color_hex(color), 0);
         lv_obj_set_style_text_align(label, align, 0);
         lv_label_set_long_mode(label, LV_LABEL_LONG_DOT);
@@ -110,9 +114,9 @@ private:
     }
 
     void DrawLauncher() {
-        static const char* kItems[] = {"1  XIAOZHI", "2  MATH", "3  RACING"};
-        static const uint32_t kItemColors[] = {0x1d4ed8, 0x047857, 0xbe123c};
-        for (int i = 0; i < 3; ++i) {
+        static const char* kItems[] = {"1  XIAOZHI", "2  MATH", "3  RACING", "4  打砖块"};
+        static const uint32_t kItemColors[] = {0x1d4ed8, 0x047857, 0xbe123c, 0x7c3aed};
+        for (int i = 0; i < kLauncherItemCount; ++i) {
             const bool active = i == launcher_index_;
             StyleLauncherBox(launcher_items_[i], active ? 0xfff1c2 : kItemColors[i],
                              active ? 0xffd166 : 0x334155, active ? 2 : 1, 5);
@@ -132,6 +136,9 @@ private:
         if (racing_game_.IsRunning()) {
             racing_game_.Stop();
         }
+        if (breakout_game_.IsRunning()) {
+            breakout_game_.Stop();
+        }
 
         DisplayLockGuard lock(display_);
         launcher_mode_ = LauncherMode::kMenu;
@@ -144,12 +151,12 @@ private:
             AddLauncherLabel(launcher_layer_, 7, 8, display_->width() - 14, "SELECT MODE", 0xffd166, LV_TEXT_ALIGN_CENTER);
             AddLauncherLabel(launcher_layer_, 7, 26, display_->width() - 14, "GPIO39 move", 0x94a3b8, LV_TEXT_ALIGN_CENTER);
 
-            for (int i = 0; i < 3; ++i) {
+            for (int i = 0; i < kLauncherItemCount; ++i) {
                 launcher_items_[i] = lv_obj_create(launcher_layer_);
-                lv_obj_set_size(launcher_items_[i], display_->width() - 18, 28);
-                lv_obj_set_pos(launcher_items_[i], 9, 48 + i * 33);
+                lv_obj_set_size(launcher_items_[i], display_->width() - 18, 23);
+                lv_obj_set_pos(launcher_items_[i], 9, 38 + i * 26);
                 StyleLauncherBox(launcher_items_[i], 0x16345f, 0x334155, 1, 5);
-                launcher_labels_[i] = AddLauncherLabel(launcher_items_[i], 8, 7, display_->width() - 34, "", 0xf8fafc);
+                launcher_labels_[i] = AddLauncherLabel(launcher_items_[i], 8, 4, display_->width() - 34, "", 0xf8fafc);
             }
 
             AddLauncherLabel(launcher_layer_, 7, display_->height() - 18, display_->width() - 14,
@@ -172,7 +179,7 @@ private:
             return;
         }
         DisplayLockGuard lock(display_);
-        launcher_index_ = (launcher_index_ + delta + 3) % 3;
+        launcher_index_ = (launcher_index_ + delta + kLauncherItemCount) % kLauncherItemCount;
         DrawLauncher();
     }
 
@@ -198,9 +205,12 @@ private:
         } else if (launcher_index_ == 1) {
             launcher_mode_ = LauncherMode::kMath;
             math_game_.Start(display_);
-        } else {
+        } else if (launcher_index_ == 2) {
             launcher_mode_ = LauncherMode::kRacing;
             racing_game_.Start(display_);
+        } else {
+            launcher_mode_ = LauncherMode::kBreakout;
+            breakout_game_.Start(display_);
         }
     }
 
@@ -281,6 +291,9 @@ private:
             if (racing_game_.HandleClick()) {
                 return;
             }
+            if (breakout_game_.HandleClick()) {
+                return;
+            }
             auto& app = Application::GetInstance();
             if (app.GetDeviceState() == kDeviceStateStarting && !WifiStation::GetInstance().IsConnected()) {
                 ResetWifiConfiguration();
@@ -296,7 +309,10 @@ private:
             if (math_game_.HandleDoubleClick()) {
                 return;
             }
-            racing_game_.HandleDoubleClick();
+            if (racing_game_.HandleDoubleClick()) {
+                return;
+            }
+            breakout_game_.HandleDoubleClick();
         });
 
         boot_button_.OnLongPress([this]() {
@@ -315,7 +331,10 @@ private:
             if (math_game_.MoveRight()) {
                 return;
             }
-            racing_game_.MoveRight();
+            if (racing_game_.MoveRight()) {
+                return;
+            }
+            breakout_game_.MoveRight();
         });
     }
 
